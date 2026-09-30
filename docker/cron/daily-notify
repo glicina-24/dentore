@@ -1,0 +1,4 @@
+# 平日8:55(JST)にdaily_notifyバッチを実行する。
+# 祝日判定はアプリ側(yasumi/yasumi)で行うため、ここでは曜日(月〜金)のみ指定する。
+# 実行結果はlogs/cron.logに追記する(標準出力はcronでは捨てられるため)。
+55 8 * * 1-5 www-data cd /var/www/html && bin/cake daily_notify >> /var/www/html/logs/cron.log 2>&1

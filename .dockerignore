@@ -1,0 +1,7 @@
+vendor
+data
+.env
+.git
+*.md
+tmp/cache
+logs

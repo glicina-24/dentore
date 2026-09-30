@@ -1,0 +1,33 @@
+# 開発用の上書き設定(雛形)。
+#
+# 使い方:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#
+# PHPはNode.jsと違ってコンパイルが不要な言語なので、ソースコードさえ
+# コンテナの中に反映されていれば、ファイルを保存した瞬間に変更が反映される
+# (tsxのような自動再起動ツールは不要)。なのでここでやることは
+# 「ソースコードをコンテナにマウントする」ことだけで良い。
+# webroot/はdocker-compose.yml側で既にマウントされているため、
+# ここではsrc/templates/configだけ追加でマウントする。
+#
+# 本番(OCI)のサーバーにはこのファイルを置かない。
+
+services:
+  app:
+    volumes:
+      - ./src:/var/www/html/src
+      - ./templates:/var/www/html/templates
+      - ./config:/var/www/html/config
+    environment:
+      # 開発中はエラー画面を詳しく表示するモードにしておく
+      - DEBUG=true
+
+  cron:
+    volumes:
+      - ./src:/var/www/html/src
+      - ./templates:/var/www/html/templates
+      - ./config:/var/www/html/config
+
+# vendor/(Composerが入れた依存パッケージ)はマウントしない。
+# ホスト側でcomposer installした結果とコンテナ内の結果がズレて
+# 動かなくなるのを防ぐため(Node/npmのnode_modulesと同じ考え方)。

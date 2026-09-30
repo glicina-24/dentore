@@ -1,81 +1,55 @@
-# 電話当番通知アプリ 要件定義(v1.3)
+# dentore(電話当番通知アプリ)
 
-v1.1からの変更点: 言語・フレームワークをNode.js+TypeScriptからPHP(CakePHP)に変更。理由はチームメンバーがCakePHPを学習中であるため。これに伴い、定期実行の方式をアプリ内スケジューラからOSのcronに変更。
+電話当番の当日確認の手間をなくすため、当日朝に自動で当番者をチーム全員へメール通知するアプリです。CakePHP学習を目的とした個人開発リポジトリです。詳しい要件は [docs/requirements.md](docs/requirements.md) を参照してください。
 
-v1.2からの変更点: v1.2時点ではWebサーバー構成(Apache+mod_php、Dockerfile 1枚)とcronの実行方式(ホストOSのcron)が、CakePHPへの変更前の検討を引きずったまま整合性が取れていなかった。チームメンバーがnginx+php-fpm・MySQLに使い慣れていることを踏まえ、以下の通り見直した。
-- Webサーバー:Apache+mod_php → nginx+php-fpm
-- DB:SQLite → MySQL
-- コンテナ構成:Dockerfile 1枚 → docker-compose(nginx/app/cron/mysqlの4コンテナ構成)。cronもホストOS任せにせず専用コンテナに切り出し、「1コンテナ1プロセス」の原則を保つ
-- ホスティングのシェイプ:OCI Always FreeのうちAmpere A1(ARM, 4 OCPU/24GBメモリ)を使用することを明記(x86 Microは1GBメモリしかなく4コンテナ構成には不向きなため)
+## 前提条件
 
-## 1. 背景・目的
-電話当番の当日確認の手間をなくす。当日朝、自動で当番者をチーム全員に通知する。
+- Docker / Docker Compose がインストールされていること(ホストにPHPやComposerを個別に入れる必要はありません)
 
-## 2. 対象ユーザー・体制
-- 少人数チーム(〜数十人)が利用者
-- 開発体制:4人でチーム開発予定
+## セットアップ手順
 
-## 3. 機能要件
+```bash
+# 1. 環境変数ファイルを準備(.envはgit管理対象外)
+cp .env.example .env
+# .env を開いて DB_PASSWORD, MYSQL_ROOT_PASSWORD, SECURITY_SALT, SMTP_* などの値を埋める
 
-### 3.1 メンバー管理
-- 登録・編集・削除は**常に論理削除**(`deleted_at`)で統一する。物理削除は行わない(削除フローを1種類に保ち、誤登録も履歴として残す運用とする)
-- ローテーションの並び順を個別に指定・変更できる(`sort_order`)
+# 2. 開発用の上書き設定を用意(ソースコードをコンテナにマウントする設定)
+cp docker-compose.override.yml.example docker-compose.override.yml
 
-### 3.2 当番ローテーション
-- 登録メンバーで自動ローテーション(平日のみ対象)
-- 個別日の手動上書きは無し
-- 「次の当番」を直接指定してポインタをリセットできる調整機能(ローテーションがずれた場合の是正用)
-- **ポインタが指すメンバーが論理削除されている場合、当日バッチは自動的に次の有効なメンバーへスキップして当番を決定する**(送信停止・手動介入は不要)
-- 当番実行履歴(誰がいつ当番だったか)を記録する(`duty_log`)
+# 3. CakePHPのローカル設定を用意(値は.envから読み込まれるので、基本的に編集不要)
+cp config/app_local.example.php config/app_local.php
 
-### 3.3 祝日・休日判定
-- 日本の祝日データ(内閣府公表データ相当)を用いて、土日とあわせて通知対象日から除外
-- ライブラリは`yasumi/yasumi`(PHP、複数国の祝日に対応、日本のプロバイダあり)を候補とする。※CakePHPへの変更に伴う候補変更。実際に`composer require`する際に最新のメンテナンス状況を確認すること
-- 手動でのCSV更新運用は行わない
+# 4. コンテナをビルドして起動(nginx / app / cron / mysql の4コンテナが立ち上がる)
+docker compose up -d --build
 
-### 3.4 通知
-- 平日8:55(JST)に、その日の当番者名をチーム全員へメール通知
-- 送信先:既存の組織メールサーバー(SMTP)経由。CakePHP標準の`Cake\Mailer\Mailer`(SMTP transport)を使用。接続情報は`config/app_local.php`(gitignore対象)で管理
-- バッチは冪等(同日の二重送信を防止)
-- 送信失敗時は数回(例:3回、指数バックオフ)自動リトライし、それでも失敗した場合は失敗として記録するのみとする(管理者への即時アラート等の別経路通知はフェーズ2以降で検討)
-- 将来のチャネル追加(LINE公式アカウント等)を見据え、送信処理は抽象化しておく
+# 5. (初回のみ)DBマイグレーションを実行
+docker compose exec app bin/cake migrations migrate
+```
 
-### 3.5 認証
-- 共通パスワード(合言葉)方式(個別ログインは不要、過剰実装を避ける)
-- 個人を識別できないため、ポインタ調整などの操作ログは記録しない(少人数運用における意図的な割り切り)
+起動後、ブラウザで [http://localhost:8081](http://localhost:8081) を開いてください。CakePHPのウェルカムページが表示され、「CakePHP is able to connect to the database.」と出ていればセットアップ成功です。
 
-## 4. インフラ
-- ホスティング:OCI(Oracle Cloud Infrastructure)Always Free、シェイプは**Ampere A1(ARM, 4 OCPU/24GBメモリ)**を使用する(x86 Microは1GBメモリしかなく、後述の4コンテナ構成には不向きなため)
-- 定期実行:**cron専用コンテナ**内のcronデーモンから、CakePHPのCLIコマンド(`bin/cake daily_notify`のような形)を平日8:55(JST)に実行する。
-  ※v1.1では「アプリ内スケジューラで完結させ、外部cron連携を不要にする」としていたが、これはNode.jsの常駐プロセス前提の設計だった。v1.2ではホストOSのcronからの実行を想定していたが、これはWebサーバー構成の見直し(下記5章参照)に伴い、cron専用コンテナに切り出す形に変更した。ホスト側のcrontab手動設定が不要になり、リポジトリ内(docker-compose)で完結する。
+## よく使うコマンド
 
-## 5. 技術スタック
-- 言語:PHP + CakePHP 5.x(フレームワーク)。PHP 8.1以上が必要
-- サーバー:nginx + php-fpm(2コンテナ構成)。CakePHPの`webroot/`をドキュメントルートとする
-  ※当初はApache+mod_php(1コンテナ完結)を想定していたが、チームがnginx+php-fpmに使い慣れているため変更した。これに伴い「Dockerfile 1枚」ではなくdocker-composeによる複数コンテナ構成に変更(下記コンテナ欄参照)
-- DB:MySQL
-  ※当初はSQLite(ファイルベース)を想定していたが、チームがMySQLに使い慣れているため変更した。接続情報は通知用SMTP設定と同様`config/app_local.php`(gitignore対象)で管理する
-- メール送信:CakePHP標準の`Cake\Mailer\Mailer`(SMTP transport)
-- 祝日判定:`yasumi/yasumi`(候補、要確認)
-- フロントエンド:ビルド不要な素のHTML/CSS/JS、またはCakePHPの標準テンプレート(`templates/`)。※どちらの方針で進めるか要相談(下記「次のステップ」参照)
-- コンテナ:docker-composeによる4コンテナ構成(`nginx` / `app`(php-fpm) / `cron` / `mysql`)。`app`と`cron`は同一イメージ(同じアプリケーションコード)を使う
+```bash
+# ログを見る
+docker compose logs -f app
 
-## 6. データモデル(ラフ、変更なし)
-- `members`:id, name, email, sort_order, deleted_at
-- `rotation_state`:現在の「次の当番」ポインタ(member_idを保持する1レコード。指す先が論理削除済みの場合は当日バッチ実行時に次の有効なメンバーへ読み替える)
-- `duty_log`:date, member_id(当番実行履歴。通知送信時に記録し、同日二重送信防止の判定にも利用する)
-- `holidays`:判定はライブラリ(`yasumi/yasumi`)に委譲。テーブル管理は不要
+# appコンテナのシェルに入る
+docker compose exec app bash
 
-CakePHPではスキーマ管理に`cakephp/migrations`プラグイン(Phinxベース)を使うのが標準的。
+# 当番通知バッチ(daily_notify)を手動実行して動作確認する
+# (本番では平日8:55にcronコンテナが自動実行する)
+docker compose exec app bin/cake daily_notify
 
-## 7. 拡張(フェーズ2以降・MVP外、変更なし)
-- 通知チャネルの追加(LINE公式アカウント、Slack/Discord等)
-- 通知種類の追加(前日リマインド等)
-- 送信失敗時の管理者への即時アラート
+# コンテナを停止する
+docker compose down
+```
 
-## 8. 次のステップ
-- フロントエンドの方針決定(素のHTML/JS + CakePHPをAPIとして使うか、CakePHP標準テンプレートで作るか)
-- リポジトリ作成・CakePHP本体の生成(`composer create-project`)
-- docker-compose(`nginx` / `app` / `cron` / `mysql`)の構成ファイル作成
-- DBスキーマのマイグレーションファイル作成
-- Docker環境構築
+## 構成
+
+- `nginx`: Webサーバー(静的ファイル配信、`.php`へのリクエストをappへ転送)
+- `app`: CakePHP本体(php-fpmで実行)
+- `cron`: appと同じコードを使い、平日8:55(JST)に`daily_notify`を実行する専用コンテナ
+- `mysql`: DB(データは名前付きボリューム`mysql-data`に永続化)
+
+各コンテナの詳細は [Dockerfile](Dockerfile) と [docker-compose.yml](docker-compose.yml) を参照してください。
