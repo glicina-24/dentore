@@ -21,8 +21,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - php-version: '8.2'
-            dependencies: 'lowest'
+          - php-version: '8.4'
+            dependencies: 'locked'
           - php-version: '8.5'
             dependencies: 'highest'
           - php-version: '8.5'
