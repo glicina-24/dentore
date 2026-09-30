@@ -3,7 +3,6 @@ declare(strict_types=1);
 
 namespace App\Model\Table;
 
-use Cake\ORM\Query\SelectQuery;
 use Cake\ORM\RulesChecker;
 use Cake\ORM\Table;
 use Cake\Validation\Validator;
@@ -24,7 +23,6 @@ use Cake\Validation\Validator;
  * @method iterable<\App\Model\Entity\Member>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\Member> saveManyOrFail(iterable $entities, array $options = [])
  * @method iterable<\App\Model\Entity\Member>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\Member>|false deleteMany(iterable $entities, array $options = [])
  * @method iterable<\App\Model\Entity\Member>|\Cake\Datasource\ResultSetInterface<\App\Model\Entity\Member> deleteManyOrFail(iterable $entities, array $options = [])
- *
  * @mixin \Cake\ORM\Behavior\TimestampBehavior
  */
 class MembersTable extends Table
@@ -62,6 +60,7 @@ class MembersTable extends Table
 
         $validator
             ->email('email')
+            ->maxLength('email', 255)
             ->requirePresence('email', 'create')
             ->notEmptyString('email');
 
@@ -74,5 +73,21 @@ class MembersTable extends Table
             ->allowEmptyDateTime('deleted_at');
 
         return $validator;
+    }
+
+    /**
+     * アプリケーションルール(DBの状態と照らし合わせるチェック)を定義する。
+     *
+     * 保存の直前に実行される。現状は email の重複を禁止している。
+     * ※論理削除済みメンバーも重複判定の対象になっているため、#3 で見直す。
+     *
+     * @param \Cake\ORM\RulesChecker $rules ルールを追加する対象
+     * @return \Cake\ORM\RulesChecker
+     */
+    public function buildRules(RulesChecker $rules): RulesChecker
+    {
+        $rules->add($rules->isUnique(['email']), ['errorField' => 'email', 'message' => 'このメールアドレスは既に登録されています。']);
+
+        return $rules;
     }
 }
